@@ -1,6 +1,7 @@
 package com.learningbuddy.core;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.learningbuddy.config.PropertiesConfig;
 import lombok.RequiredArgsConstructor;
@@ -56,17 +57,43 @@ public class LlmClient {
     /** 结构化输出(JSON → 目标类型) */
     public <T> T chatJson(String systemPrompt, String userPrompt, Class<T> type) {
         LlmResult raw = chat(systemPrompt, userPrompt + "\n\n请严格用 JSON 格式输出,不要任何额外说明。");
+        return parseJson(raw.content(), type);
+    }
+
+    /** 结构化输出(支持 List<T> 等泛型,用 TypeReference) */
+    public <T> T chatJson(String systemPrompt, String userPrompt, TypeReference<T> typeRef) {
+        LlmResult raw = chat(systemPrompt, userPrompt + "\n\n请严格用 JSON 格式输出,不要任何额外说明。");
+        return parseJsonRef(raw.content(), typeRef);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T parseJson(String content, Class<T> type) {
         try {
-            // 简易容错:模型有时包 ```json ... ```
-            String json = raw.content().trim();
-            if (json.startsWith("```")) {
-                json = json.replaceAll("^```[a-zA-Z]*\\n?", "").replaceAll("\\n?```$", "");
-            }
+            String json = stripCodeFence(content);
             return objectMapper.readValue(json, type);
         } catch (JsonProcessingException e) {
-            log.error("JSON 解析失败,fallback mock: {}", e.getMessage());
-            return mockJson(type);
+            log.error("JSON 解析失败: {}", e.getMessage());
+            return (T) mockJson(type);
         }
+    }
+
+    private <T> T parseJsonRef(String content, TypeReference<T> typeRef) {
+        try {
+            String json = stripCodeFence(content);
+            return objectMapper.readValue(json, typeRef);
+        } catch (JsonProcessingException e) {
+            log.error("JSON 解析失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String stripCodeFence(String content) {
+        if (content == null) return "";
+        String json = content.trim();
+        if (json.startsWith("```")) {
+            json = json.replaceAll("^```[a-zA-Z]*\\n?", "").replaceAll("\\n?```$", "");
+        }
+        return json;
     }
 
     /** 文本嵌入(zvec 写入与查询都用) */

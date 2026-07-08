@@ -24,7 +24,7 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <spring-ai.version>1.0.0</spring-ai.version>
         <tika.version>2.9.2</tika.version>
         <jjwt.version>0.12.6</jjwt.version>
         <lombok.version>1.18.34</lombok.version>
@@ -116,11 +116,19 @@
             <version>${tika.version}</version>
         </dependency>
 
-        <!-- 向量库:zvec(阿里开源) -->
+        <!-- 向量库:zvec(阿里开源;尚未发布到 Maven Central 时,先注释掉,改用本地 jar) -->
+        <!--
         <dependency>
             <groupId>com.alibaba.zvec</groupId>
             <artifactId>zvec-core</artifactId>
             <version>${zvec.version}</version>
+        </dependency>
+        -->
+        <!-- zvec 临时替代:不引入任何向量库,Retriever 走纯内存实现(zvec 集成后续在 D5 单独接) -->
+        <dependency>
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+            <version>5.3.7</version>
         </dependency>
 
         <!-- 工具 -->
@@ -172,12 +180,10 @@
             <id>central</id>
             <url>https://repo.maven.apache.org/maven2</url>
         </repository>
-        <!-- 若 zvec 未上 Maven Central,可启用以下镜像或改用本地 jar -->
-        <!--
+        <!-- 阿里云公共仓库(若 zvec 上架此处,放开依赖即可) -->
         <repository>
             <id>alibaba-public</id>
             <url>https://maven.aliyun.com/repository/public</url>
         </repository>
-        -->
     </repositories>
 </project>
