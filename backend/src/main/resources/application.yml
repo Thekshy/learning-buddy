@@ -1,0 +1,76 @@
+server:
+  port: ${APP_PORT:8080}
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: ${APP_NAME:learning-buddy}
+
+  # ---------- 关系库 ----------
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./data/learning-buddy;AUTO_SERVER=TRUE;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+  jpa:
+    hibernate:
+      ddl-auto: update                # 首次跑自动建表;生产建议 validate
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # ---------- 文件上传(RAG) ----------
+  servlet:
+    multipart:
+      max-file-size: ${RAG_MAX_UPLOAD_MB:20}MB
+      max-request-size: ${RAG_MAX_UPLOAD_MB:20}MB
+
+  # ---------- LLM: MiniMax M3(经 OpenAI 兼容协议) ----------
+  ai:
+    openai:
+      api-key: ${LLM_API_KEY:sk-placeholder}
+      base-url: ${LLM_BASE_URL:https://api.minimaxi.com/v1}
+      chat:
+        options:
+          model: ${LLM_MODEL:minimax-m3}
+          temperature: ${LLM_TEMPERATURE:0.6}
+          max-tokens: ${LLM_MAX_TOKENS:2048}
+          timeout: ${LLM_TIMEOUT_SECONDS:60}s
+      embedding:
+        options:
+          model: ${LLM_EMBED_MODEL:minimax-embedding-01}
+
+# ---------- 自定义配置 ----------
+learningbuddy:
+  jwt:
+    secret: ${JWT_SECRET:change-me-to-a-long-random-string-please-change-me-now}
+    ttl-hours: ${JWT_TTL_HOURS:72}
+    issuer: learning-buddy
+  security:
+    bcrypt-rounds: ${BCRYPT_ROUNDS:10}
+  llm:
+    fallback-mock: ${LLM_FALLBACK_MOCK:true}
+    provider: ${LLM_PROVIDER:minimax}
+  zvec:
+    data-dir: ${ZVEC_DATA_DIR:./data/zvec}
+    default-collection: ${ZVEC_COLLECTION_DEFAULT:learning_buddy_default}
+    dim: ${ZVEC_DIM:1024}
+    topk: ${ZVEC_TOPK:5}
+  rag:
+    chunk-size: ${RAG_CHUNK_SIZE:600}
+    chunk-overlap: ${RAG_CHUNK_OVERLAP:80}
+  cors:
+    allowed-origins: ${FRONTEND_ORIGIN:http://localhost:3000}
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.learningbuddy: DEBUG
+    org.springframework.ai: INFO
