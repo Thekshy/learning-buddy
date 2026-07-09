@@ -113,25 +113,32 @@ public class Orchestrator {
 
     private AgentContext.Intent classifyIntent(AgentContext ctx) {
         String system = """
-                你是意图分类器。根据用户输入,只输出一个词(枚举):
-                  LEARN(想学某知识点) / QUIZ(要题) / ANSWER(答疑) /
-                  RECOMMEND(要资源) / REVIEW(看进度) / UPLOAD(传资料) /
-                  GREETING(寒暄) / UNKNOWN
-                严格只输出枚举名。""";
+                你是意图分类器。根据用户输入判断意图,从枚举中选一个。
+                枚举值含义:
+                  LEARN     — 想学某知识点(例如:"我想学 X"、"教我 X")
+                  QUIZ      — 要做题(例如:"出几道题"、"考考我")
+                  ANSWER    — 答疑解惑(例如:"X 是什么"、"为什么 X"、"X 怎么用")
+                  RECOMMEND — 要资源(例如:"推荐点资料"、"有什么好教程")
+                  REVIEW    — 看进度(例如:"复盘"、"我学得怎么样"、"错题")
+                  UPLOAD    — 上传资料
+                  GREETING  — 寒暄(例如:"你好"、"hi")
+                  UNKNOWN   — 无法判断
+                """;
         String user = (String) ctx.getSlot("rawInput");
-        var r = llm.chat(system, user);
-        String word = r.content().trim().split("\\s+")[0].toUpperCase();
-        return switch (word) {
-            case "LEARN"     -> AgentContext.Intent.LEARN;
-            case "QUIZ"      -> AgentContext.Intent.QUIZ;
-            case "ANSWER"    -> AgentContext.Intent.ANSWER;
-            case "RECOMMEND" -> AgentContext.Intent.RECOMMEND;
-            case "REVIEW"    -> AgentContext.Intent.REVIEW;
-            case "UPLOAD"    -> AgentContext.Intent.UPLOAD;
-            case "GREETING"  -> AgentContext.Intent.GREETING;
-            default          -> AgentContext.Intent.UNKNOWN;
-        };
+        // 协议层结构化输出:LLM 必须返回 IntentResult 格式(JSON schema 约束)
+        IntentResult result = llm.chatStructured(system, user, IntentResult.class);
+        if (result == null || result.intent() == null) {
+            return AgentContext.Intent.UNKNOWN;  // 兜底:让 keywordIntent 再判一次
+        }
+        try {
+            return AgentContext.Intent.valueOf(result.intent().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return AgentContext.Intent.UNKNOWN;
+        }
     }
+
+    /** 协议层结构化输出 schema(Spring AI 会把字段名 + 类型推给 LLM) */
+    public record IntentResult(String intent, Double confidence, String reason) {}
 
     /**
      * 纯关键词兜底意图分类(LLM 不可用时使用)

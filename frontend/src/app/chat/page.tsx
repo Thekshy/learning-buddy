@@ -7,10 +7,9 @@ import BlurText from "@/components/ui/BlurText";
 import Stepper, { Step } from "@/components/ui/Stepper";
 
 /**
- * 聊天主界面 — 体现"多智能体协作"
- *  - 左侧:对话流
- *  - 右侧:Agent 调用链 Stepper(评分核心可视化)
- *  - 输入:支持开关 RAG
+ * 聊天主界面 — react-bits 视觉特效
+ *  - 左侧:对话流 + BlurText 欢迎语
+ *  - 右侧:Stepper Agent 调用链(评分核心)
  */
 
 type AgentCall = {
@@ -154,7 +153,7 @@ export default function ChatPage() {
         </div>
       </section>
 
-      {/* 右侧:Agent 调用链 — 用 react-bits 的 Stepper 重做 */}
+      {/* 右侧:Agent 调用链 — react-bits Stepper(评分核心) */}
       <aside className="w-[420px] border-l border-slate-200 bg-white overflow-y-auto p-4">
         <div className="mb-3 flex items-center gap-2">
           <Brain className="w-4 h-4 text-brand-600" />
@@ -172,9 +171,6 @@ export default function ChatPage() {
   );
 }
 
-/**
- * 把 AgentCall[] 适配到 Stepper 的 children API
- */
 function AgentChainStepper({ calls }: { calls: AgentCall[] }) {
   return (
     <Stepper
@@ -192,9 +188,6 @@ function AgentChainStepper({ calls }: { calls: AgentCall[] }) {
   );
 }
 
-/**
- * 单个 Agent 调用的详情卡
- */
 function AgentCallCard({ call }: { call: AgentCall }) {
   const statusMap: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
     SUCCESS: {

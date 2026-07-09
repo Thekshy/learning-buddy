@@ -66,6 +66,35 @@ public class LlmClient {
         return parseJsonRef(raw.content(), typeRef);
     }
 
+    /**
+     * 协议级结构化输出(推荐)
+     * <p>用 Spring AI BeanOutputConverter 把 Java 类型转成 JSON Schema,
+     * 让 LLM 在协议层就约束输出格式(走 OpenAI response_format=json_object)。
+     * <p>与 chatJson 的区别:
+     * <ul>
+     *   <li>chatJson: 靠 prompt 提示 + 手 parse → 脆弱,LLM 不听话就崩</li>
+     *   <li>chatStructured: JSON schema 注入 + 自动 entity() → 协议层保证</li>
+     * </ul>
+     *
+     * @param type 目标 Java 类型(record / class 均可)
+     * @return 解析后的对象;LLM 不可用或解析失败时返回 null(让调用方决定兜底)
+     */
+    public <T> T chatStructured(String systemPrompt, String userPrompt, Class<T> type) {
+        long t0 = System.currentTimeMillis();
+        try {
+            T result = chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
+                    .call()
+                    .entity(type);
+            log.debug("LLM chatStructured ok: {}ms, type={}", System.currentTimeMillis() - t0, type.getSimpleName());
+            return result;
+        } catch (Exception e) {
+            log.warn("LLM chatStructured failed (LLM unavailable or bad schema): {}", e.getMessage());
+            return null;
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private <T> T parseJson(String content, Class<T> type) {
         try {
