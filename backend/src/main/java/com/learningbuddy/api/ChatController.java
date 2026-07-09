@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * 聊天 Controller —— 用户主入口
  *
- * <p>POST /api/chat        发送消息(经 Orchestrator 派发)
+ * <p>POST /api/chat          发送消息(经 Orchestrator Function Calling 派发)
  * <p>GET  /api/agent-calls?request_id=xxx  拉取 Agent 调用链
  */
 @RestController
@@ -33,10 +33,11 @@ public class ChatController {
         AgentContext ctx = AgentContext.create(userId, null, req.message());
         if (req.useRag() != null) ctx.putSlot("useRag", req.useRag());
         if (req.history() != null) ctx.putSlot("history", req.history());
+
         var resp = orchestrator.dispatch(ctx);
         return ResponseEntity.ok(Map.of(
                 "requestId", resp.requestId(),
-                "intent", resp.intent(),
+                "tools", resp.toolNames(),         // 新:列出 LLM 选的 Tool
                 "reply", resp.reply(),
                 "detail", resp.detail()
         ));
