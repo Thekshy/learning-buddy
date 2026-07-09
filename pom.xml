@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      根聚合 pom:让根目录被 IDEA 识别为 Maven 项目
+      真正的业务代码在 backend/ 子模块里
+      这里只做版本/插件统一管理,不放代码
+    -->
+
+    <groupId>com.learningbuddy</groupId>
+    <artifactId>learning-buddy</artifactId>
+    <version>0.1.0</version>
+    <packaging>pom</packaging>
+    <name>learning-buddy</name>
+    <description>智能学习伙伴 — 多智能体应用(根聚合)</description>
+
+    <modules>
+        <module>backend</module>
+        <!-- 未来可加:
+        <module>agent-core</module>
+        <module>common</module>
+        -->
+    </modules>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <!--
+      跟 backend/pom.xml 保持镜像源一致(开发机有 ~/.m2/settings.xml,但 IDEA 偶尔会忽略,
+      这里再声明一次保底)
+    -->
+    <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+        <repository>
+            <id>alibaba-public</id>
+            <url>https://maven.aliyun.com/repository/public</url>
+        </repository>
+    </repositories>
+
+</project>
