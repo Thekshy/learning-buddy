@@ -53,12 +53,16 @@ public class Orchestrator {
         try {
             intent = classifyIntent(ctx);
         } catch (Exception e) {
-            log.warn("intent classification failed, fallback TUTOR: {}", e.getMessage());
+            log.warn("intent classification failed, fallback to keyword: {}", e.getMessage());
             intent = AgentContext.Intent.ANSWER;
         }
-        ctx.setIntent(intent);
         // 2. 槽位抽取(粗粒度:正则/关键词,避免多一次 LLM 调用)
         extractSlots(ctx);
+        // 兜底:若 LLM 没拿到明确 intent(UN/UNKNOWN),用关键词重新分类
+        if (intent == AgentContext.Intent.UNKNOWN) {
+            intent = keywordIntent(ctx);
+        }
+        ctx.setIntent(intent);
         recorder.finish(orchestratorCallId, "SUCCESS", "intent=" + intent, null);
 
         // 3. 调度
@@ -127,6 +131,42 @@ public class Orchestrator {
             case "GREETING"  -> AgentContext.Intent.GREETING;
             default          -> AgentContext.Intent.UNKNOWN;
         };
+    }
+
+    /**
+     * 纯关键词兜底意图分类(LLM 不可用时使用)
+     * 优先级:QUIZ > REVIEW > RECOMMEND > ANSWER > LEARN > GREETING
+     */
+    private AgentContext.Intent keywordIntent(AgentContext ctx) {
+        String text = (String) ctx.getSlot("rawInput");
+        if (text == null || text.isBlank()) return AgentContext.Intent.GREETING;
+        String lower = text.toLowerCase();
+
+        if (lower.contains("出题") || lower.contains("做题") || lower.contains("来") && lower.contains("题")
+                || lower.contains("考考我") || lower.contains("测验")) {
+            return AgentContext.Intent.QUIZ;
+        }
+        if (lower.contains("复盘") || lower.contains("进度") || lower.contains("学得怎么样")
+                || lower.contains("错题") || lower.contains("总结")) {
+            return AgentContext.Intent.REVIEW;
+        }
+        if (lower.contains("资源") || lower.contains("教程") || lower.contains("推荐")
+                || lower.contains("看什么") || lower.contains("学什么")) {
+            return AgentContext.Intent.RECOMMEND;
+        }
+        if (lower.contains("怎么") || lower.contains("为什么") || lower.contains("是什么")
+                || lower.contains("解释") || lower.contains("区别") || lower.contains("?")) {
+            return AgentContext.Intent.ANSWER;
+        }
+        if (lower.contains("想学") || lower.contains("学习") || lower.contains("初学")
+                || lower.contains("入门") || lower.contains("进阶")) {
+            return AgentContext.Intent.LEARN;
+        }
+        if (lower.contains("你好") || lower.contains("hi") || lower.contains("hello")) {
+            return AgentContext.Intent.GREETING;
+        }
+        // 兜底默认 LEARN(因为有 "装饰器" 这种关键词都被识别为知识点)
+        return AgentContext.Intent.LEARN;
     }
 
     /** 极简槽位抽取 —— 演示阶段不依赖 NLU,后续可换 LLM 抽取或换 NLPCraft */

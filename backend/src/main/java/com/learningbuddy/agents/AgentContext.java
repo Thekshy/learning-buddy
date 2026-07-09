@@ -42,11 +42,14 @@ public class AgentContext {
     private Long parentCallId;
 
     public static AgentContext create(Long userId, Long sessionId, String rawInput) {
+        Map<String, Object> slots = new HashMap<>();
+        slots.put("rawInput", rawInput);
         return AgentContext.builder()
                 .requestId(UUID.randomUUID().toString())
                 .userId(userId)
                 .sessionId(sessionId)
-                .slots(Map.of("rawInput", rawInput))
+                .slots(slots)
+                .data(new HashMap<>())
                 .build();
     }
 
