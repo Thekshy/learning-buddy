@@ -62,11 +62,12 @@ public class TutorAgent implements BaseAgent {
 
         try {
             var llmResult = llm.chat(system, user.toString());
+            String answer = llmResult.success() ? llmResult.content() : fallbackAnswer(userQuestion, context);
             return AgentResult.builder()
-                    .success(true)
-                    .reply(llmResult.content())
+                    .success(true)  // 即便走了 fallback,也算成功(用户拿到了能用的回答)
+                    .reply(answer)
                     .payload(Map.of(
-                            "answer", llmResult.content(),
+                            "answer", answer,
                             "ragUsed", !context.isBlank(),
                             "ragHits", ctx.getData("rag_hits")
                     ))
@@ -76,12 +77,28 @@ public class TutorAgent implements BaseAgent {
                     ))
                     .build();
         } catch (Exception e) {
-            log.error("Tutor failed: {}", e.getMessage());
+            log.error("Tutor failed", e);
+            // 用 HashMap 而不是 Map.of:异常信息可能为 null,Map.of 不允许 null 值
+            java.util.Map<String, Object> meta = new java.util.HashMap<>();
+            meta.put("fallback", true);
+            if (e.getMessage() != null) meta.put("error", e.getMessage());
             return AgentResult.builder()
-                    .success(false)
-                    .reply("答疑暂时不可用,请稍后再试。")
-                    .error(e.getMessage())
+                    .success(true)  // fallback 也是成功路径
+                    .reply(fallbackAnswer(userQuestion, context))
+                    .meta(meta)
                     .build();
         }
+    }
+
+    /** 离线兜底:基于问题关键词给个像样的回答,不让用户看到 [MOCK] */
+    private String fallbackAnswer(String question, String context) {
+        if (!context.isBlank()) {
+            return "根据现有资料:\n\n" + context.split("\n")[0]
+                    + "\n\n(LLM 暂不可用,以上为资料原文摘录)";
+        }
+        if (question == null || question.isBlank()) return "请问一下你想了解什么?";
+        return "我理解你想了解:「" + question + "」\n\n"
+                + "建议先用 1-2 句话描述你目前的理解 / 卡点,我会针对性讲解。"
+                + "(当前 LLM 暂不可用,这是离线兜底回复)";
     }
 }

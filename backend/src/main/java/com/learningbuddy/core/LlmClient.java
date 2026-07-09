@@ -110,9 +110,9 @@ public class LlmClient {
     /* -------------------- 内部 -------------------- */
 
     private String mockAnswer(String system, String user) {
-        return "[MOCK] 当前 LLM 不可用,这是离线演示响应。"
-                + "系统提示摘要:" + abbreviate(system, 60)
-                + " | 用户输入:" + abbreviate(user, 80);
+        // LLM 不可用时的兜底文本:给上层 Agent 看,不要直接透传给用户
+        // (各 Agent 应在 fallback() 里写自己的用户友好文案)
+        return "MOCK";
     }
 
     private <T> T mockJson(Class<T> type) {

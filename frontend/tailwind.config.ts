@@ -24,6 +24,13 @@ const config: Config = {
       },
       animation: {
         "pulse-soft": "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        aurora: "aurora 60s linear infinite",
+      },
+      keyframes: {
+        aurora: {
+          from: { transform: "rotate(0deg)" },
+          to: { transform: "rotate(360deg)" },
+        },
       },
     },
   },

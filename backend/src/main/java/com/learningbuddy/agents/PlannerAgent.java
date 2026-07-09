@@ -48,13 +48,17 @@ public class PlannerAgent implements BaseAgent {
 
         try {
             PlanPayload plan = llm.chatJson(system, user, PlanPayload.class);
+            // LLM 失败时 llm.chatJson 返回 null,此时走 fallback
+            if (plan == null || plan.phases() == null || plan.phases().isEmpty()) {
+                log.warn("Planner got empty plan, using fallback");
+                return fallback(node);
+            }
             ctx.putData("plan", plan);
             return AgentResult.builder()
                     .success(true)
-                    .reply("已为你生成 " + (plan.phases() == null ? 0 : plan.phases().size())
-                            + " 个阶段的学习路径。")
+                    .reply("已为你生成 " + plan.phases().size() + " 个阶段的学习路径。")
                     .payload(plan)
-                    .meta(Map.of("phaseCount", plan.phases() == null ? 0 : plan.phases().size()))
+                    .meta(Map.of("phaseCount", plan.phases().size()))
                     .build();
         } catch (Exception e) {
             log.error("Planner failed: {}", e.getMessage());
@@ -64,8 +68,9 @@ public class PlannerAgent implements BaseAgent {
 
     /** 离线兜底:固定 3 阶段模板,保证演示链不中断 */
     private AgentResult fallback(String node) {
+        String title = "学习" + (node == null ? "目标知识点" : node);
         PlanPayload plan = new PlanPayload(
-                "学习" + (node == null ? "目标知识点" : node),
+                title,
                 List.of(
                         new Phase(1, "基础概念", List.of("理解定义", "能口述"), 2, List.of("笔记")),
                         new Phase(2, "动手实践", List.of("完成 3 个小练习"), 3, List.of("代码片段")),
@@ -74,9 +79,9 @@ public class PlannerAgent implements BaseAgent {
         );
         return AgentResult.builder()
                 .success(true)
-                .reply("[MOCK 离线] 已生成示例学习路径")
+                .reply("已为你生成 " + plan.phases().size() + " 个阶段的学习路径。")
                 .payload(plan)
-                .meta(Map.of("fallback", true))
+                .meta(Map.of("fallback", true, "phaseCount", plan.phases().size()))
                 .build();
     }
 

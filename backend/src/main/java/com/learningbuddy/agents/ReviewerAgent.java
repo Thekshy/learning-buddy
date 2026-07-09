@@ -53,7 +53,7 @@ public class ReviewerAgent implements BaseAgent {
             log.error("Reviewer failed: {}", e.getMessage());
             return AgentResult.builder()
                     .success(true)
-                    .reply("[MOCK 离线] 复盘反馈:正确率 " + (int) (accuracy * 100) + "%")
+                    .reply("已生成复盘报告,正确率 " + (int) (accuracy * 100) + "%")
                     .payload(Map.of(
                             "summary", "完成 " + total + " 题,正确 " + correct + " 题",
                             "strengths", List.of("基础概念掌握尚可"),

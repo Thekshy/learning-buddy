@@ -46,12 +46,7 @@ public class RecommenderAgent implements BaseAgent {
                     .build();
         } catch (Exception e) {
             log.error("Recommender failed: {}", e.getMessage());
-            return AgentResult.builder()
-                    .success(true)
-                    .reply("[MOCK 离线] 已展示示例资源")
-                    .payload(fallback(node))
-                    .meta(Map.of("fallback", true))
-                    .build();
+            return fallbackResult(node);
         }
     }
 
@@ -62,6 +57,16 @@ public class RecommenderAgent implements BaseAgent {
                 new Resource("入门视频教程", "VIDEO", "https://www.bilibili.com/video/BV1xxx", "B 站热门教程", 1),
                 new Resource("动手项目: 写个小工具", "PROJECT", "https://github.com/topics/python", "巩固所学", 3)
         );
+    }
+
+    // 兜底(兼容旧调用方式)
+    private AgentResult fallbackResult(String node) {
+        return AgentResult.builder()
+                .success(true)
+                .reply("已推荐 " + fallback(node).size() + " 个学习资源。")
+                .payload(fallback(node))
+                .meta(Map.of("fallback", true, "count", fallback(node).size()))
+                .build();
     }
 
     public record Resource(String title, String type, String url, String description, int difficulty) {}

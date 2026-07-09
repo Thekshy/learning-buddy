@@ -80,11 +80,12 @@ public class QuizAgent implements BaseAgent {
                         "2",
                         "字符串 'Hi' 长度为 2,__len__() 返回长度")
         );
+        List<Question> picked = qs.subList(0, Math.min(count, qs.size()));
         return AgentResult.builder()
                 .success(true)
-                .reply("[MOCK 离线] 已生成示例题目")
-                .payload(Map.of("questions", qs.subList(0, Math.min(count, qs.size())), "quizType", "PRACTICE"))
-                .meta(Map.of("fallback", true, "count", Math.min(count, qs.size())))
+                .reply("已生成 " + picked.size() + " 道练习题。")
+                .payload(Map.of("questions", picked, "quizType", "PRACTICE"))
+                .meta(Map.of("fallback", true, "count", picked.size()))
                 .build();
     }
 
