@@ -41,8 +41,14 @@ public class Orchestrator {
         String systemPrompt = buildSystemPrompt(ctx);
         String userMessage = (String) ctx.getSlot("rawInput");
 
-        // 设置 CallContext:把 requestId 传给 ToolCallingManager,让它能记录工具调用
+        // 记录 Orchestrator 根节点(调用链的起点,工具节点挂在它下面)
+        Long rootCallId = recorder.startSimple(
+                ctx.getRequestId(), "Orchestrator", "dispatch",
+                abbreviate(userMessage, 100));
+
+        // 设置 CallContext:把 requestId + parentCallId 传给 ToolCallingManager,让它能记录工具调用
         callContext.setRequestId(ctx.getRequestId());
+        callContext.setParentCallId(rootCallId);
         try {
             // 1. 调 ChatClient,.tools(tools) 把 @Tool bean 显式注册给 LLM
             //    Spring AI 内部完成 function calling 循环,LoggingToolCallingManager 会记录每次工具调用
@@ -59,10 +65,15 @@ public class Orchestrator {
             // 2. 工具调用名从 AgentCallRecorder 取(它由 ToolCallingManager 记录了真实调用)
             //    最终 assistant message 经完整 tool 循环后已不含 toolCalls,所以不能从它取
             List<String> toolNames = recorder.getByRequest(ctx.getRequestId()).stream()
+                    .filter(r -> !"Orchestrator".equals(r.agentName))
                     .map(r -> r.agentName)
                     .distinct()
                     .toList();
             log.info("LLM response: tools={}, text.len={}", toolNames.size(), finalText == null ? 0 : finalText.length());
+
+            // 3. 关闭 Orchestrator 根节点(标记整体成功)
+            recorder.finish(rootCallId, "SUCCESS",
+                    "分发 " + toolNames.size() + " 个工具: " + toolNames, null);
 
             return new OrchestratorResponse(
                     ctx.getRequestId(),
@@ -74,6 +85,9 @@ public class Orchestrator {
                             "toolCount", toolNames.size()
                     )
             );
+        } catch (RuntimeException e) {
+            recorder.finish(rootCallId, "FAILED", null, abbreviate(e.getMessage(), 300));
+            throw e;
         } finally {
             callContext.clear();
         }
@@ -121,6 +135,11 @@ public class Orchestrator {
             }
         }
         return sb.toString();
+    }
+
+    private static String abbreviate(String s, int n) {
+        if (s == null) return null;
+        return s.length() <= n ? s : s.substring(0, n) + "...";
     }
 
     /* ===================== 响应 DTO ===================== */

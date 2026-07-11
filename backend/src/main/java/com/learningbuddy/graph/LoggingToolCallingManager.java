@@ -84,9 +84,10 @@ public class LoggingToolCallingManager {
                 long ms = System.currentTimeMillis() - t0;
                 // 记录失败
                 String requestId = CallContext.currentRequestId();
+                Long parentCallId = CallContext.currentParentCallId();
                 if (requestId != null && CallContext.recorder != null) {
                     for (ToolCall c : calls) {
-                        recordFail(requestId, c, ms, e.toString());
+                        recordFail(requestId, parentCallId, c, ms, e.toString());
                     }
                 }
                 throw e;
@@ -99,29 +100,39 @@ public class LoggingToolCallingManager {
                     calls.size(), ms, responses.size());
 
             String requestId = CallContext.currentRequestId();
+            Long parentCallId = CallContext.currentParentCallId();
             if (requestId != null && CallContext.recorder != null) {
                 for (int i = 0; i < calls.size(); i++) {
                     String ret = (i < responses.size()) ? responses.get(i).responseData() : null;
-                    recordSuccess(requestId, calls.get(i), ms, ret);
+                    recordSuccess(requestId, parentCallId, calls.get(i), ms, ret);
                 }
             }
             return result;
         }
 
-        private void recordSuccess(String requestId, ToolCall call, long ms, String returnValue) {
+        private void recordSuccess(String requestId, Long parentCallId, ToolCall call, long ms, String returnValue) {
             Long callId = CallContext.recorder.startSimple(
-                    requestId, call.name(), "tool_call",
-                    abbreviate(call.arguments(), 200));
-            String output = returnValue != null ? abbreviate(returnValue, 500) : "(no return value)";
-            CallContext.recorder.finish(callId, "SUCCESS",
-                    output + " (耗时 " + ms + "ms)", null);
+                    requestId, parentCallId, call.name(), "tool_call",
+                    abbreviate(call.arguments(), 300));
+            String output = formatReturnValue(returnValue);
+            CallContext.recorder.finish(callId, "SUCCESS", output, null);
+            // 耗时单独记入 CallRecord 的 durationMs(finish 自动算),无需拼进 output
         }
 
-        private void recordFail(String requestId, ToolCall call, long ms, String err) {
+        private void recordFail(String requestId, Long parentCallId, ToolCall call, long ms, String err) {
             Long callId = CallContext.recorder.startSimple(
-                    requestId, call.name(), "tool_call",
-                    abbreviate(call.arguments(), 200));
+                    requestId, parentCallId, call.name(), "tool_call",
+                    abbreviate(call.arguments(), 300));
             CallContext.recorder.finish(callId, "FAILED", null, abbreviate(err, 300));
+        }
+
+        /**
+         * 把工具返回值格式化成人类可读的摘要。
+         * 返回值是 JSON 字符串(工具方法的序列化结果),尝试解析后提取关键信息。
+         */
+        private static String formatReturnValue(String returnValue) {
+            if (returnValue == null || returnValue.isBlank()) return "(无返回值)";
+            return abbreviate(returnValue, 600);
         }
 
         /** 从 ToolExecutionResult 的 conversationHistory 末尾找 ToolResponseMessage */

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class CallContext {
 
     private static final ThreadLocal<String> REQUEST_ID = new ThreadLocal<>();
+    private static final ThreadLocal<Long> PARENT_CALL_ID = new ThreadLocal<>();
 
     /** 由 LoggingToolCallingManager 装配时注入,供非 bean 的 LoggingDelegate 使用 */
     static AgentCallRecorder recorder;
@@ -26,12 +27,22 @@ public class CallContext {
         REQUEST_ID.set(requestId);
     }
 
+    /** 设置父调用 ID(Orchestrator 根节点),工具节点挂在其下 */
+    public void setParentCallId(Long parentCallId) {
+        PARENT_CALL_ID.set(parentCallId);
+    }
+
     public void clear() {
         REQUEST_ID.remove();
+        PARENT_CALL_ID.remove();
     }
 
     /** 供 LoggingDelegate 读取 */
     static String currentRequestId() {
         return REQUEST_ID.get();
+    }
+
+    static Long currentParentCallId() {
+        return PARENT_CALL_ID.get();
     }
 }

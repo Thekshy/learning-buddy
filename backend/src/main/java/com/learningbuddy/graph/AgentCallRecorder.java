@@ -31,9 +31,14 @@ public class AgentCallRecorder {
 
     /** 不依赖 AgentContext 的重载(供 ToolCallingManager 包装层用) */
     public Long startSimple(String requestId, String agentName, String action, String input) {
+        return startSimple(requestId, null, agentName, action, input);
+    }
+
+    /** 带 parentCallId 的重载(工具节点挂在 Orchestrator 根节点下) */
+    public Long startSimple(String requestId, Long parentCallId, String agentName, String action, String input) {
         long id = seq.getAndIncrement();
         CallRecord r = new CallRecord(
-                id, requestId, null,
+                id, requestId, parentCallId,
                 agentName, action, input,
                 "RUNNING", null, null,
                 System.currentTimeMillis(), null, 0
