@@ -24,8 +24,9 @@
                                 ▼
         ┌────────────────────────────────────────────────────┐
         │             Orchestrator(协调 Agent)               │
-        │   · 意图分类 → Agent 选择 → 串/并调度 → 结果汇总    │
-        │   · 写入 agent_call_log(供前端可视化)              │
+        │   · 把 5 个 @Tool 注册给 LLM(Spring AI FC)         │
+        │   · LLM 自主决定调哪个/调几个工具 → 一次完成        │
+        │   · 记录 tool 调用到 agent_call_log(供前端可视化)  │
         └─┬──────────┬──────────┬──────────┬──────────┬─────┘
           │          │          │          │          │
           ▼          ▼          ▼          ▼          ▼
@@ -55,18 +56,29 @@
 ## 二、模块依赖
 
 ```
-controllers
-  └── services
-        ├── agents (Orchestrator + 5 Agents)
-        │     ├── LlmClient
-        │     └── RAG (Retriever)
-        ├── repositories
-        └── entities (JPA)
+controllers (api)
+  ├── agents (Orchestrator —— Function Calling 编排)
+  ├── services (SessionService 会话记忆 / QuizService 闭环判分)
+  └── graph (AgentCallRecorder + LoggingToolCallingManager + CallContext)
+
+agents
+  ├── tools (LearningTools —— 5 个 @Tool 方法)
+  │     ├── core (LlmClient + UserContext + QuizResultHolder)
+  │     ├── rag (Retriever / DocumentIngestor)
+  │     └── services (QuizService —— 出题落库 + 判分)
+  └── graph (调用链记录,由 LoggingToolCallingManager 自动驱动)
+
+services + tools
+  └── repositories (9 个 JPA Repository)
+        └── models (9 个 JPA 实体)
 ```
 
-- **api** → **services** → **agents** + **repositories** + **rag**
-- **agents** 单向依赖 **core** (LlmClient),**rag** 单向依赖 **core** + **repositories**
-- **graph** = Orchestrator 的状态机实现,内含调用链日志
+- **api** → **agents** + **services** + **rag** + **security**
+- **agents**(Orchestrator)依赖 **tools**(LearningTools)、**graph**(AgentCallRecorder + CallContext)
+- **tools** 依赖 **core**(LlmClient)、**rag**(Retriever)、**services**(QuizService)
+- **services** 依赖 **repositories** → **models**(JPA 实体,9 张表)
+- **rag** 单向依赖 **core**(LlmClient 做 embed)
+- **graph**(LoggingToolCallingManager)通过 Spring AI 装配覆盖默认 ToolCallingManager,自动拦截所有工具调用
 
 ## 三、多智能体如何"可见"
 
@@ -88,11 +100,11 @@ request_id: req-abc-123
 
 - LangGraph 仅 Python,本项目后端是 Java。
 - Java 侧没有成熟度对等的替代(且把 Python 拼回去会引入跨语言边界)。
-- **自研 Orchestrator 状态机**反而更直观:
-  - 用 `AgentContext` 显式表达一次请求的所有中间状态
-  - 调度顺序由代码直接控制(无需 DSL)
-  - 每步完成即写 `agent_call_log`,天然产生可视化数据
-  - 后续可演进:若想图状编排,把 `Orchestrator` 替换为 `StateMachine` 即可
+- **采用 Spring AI Function Calling**,让 LLM 自己决定调哪个/调几个工具,比硬编码 intent 路由更灵活:
+  - 用 `AgentContext` 显式表达一次请求的所有中间状态(requestId / slots / data)
+  - 工具调用由 LLM 自主选择,复合需求(「教我 X 然后考考我」)自然处理
+  - 每个工具调用完成后由 `AgentCallRecorder` 记录,天然产生可视化数据
+  - 加新工具 = 在 `LearningTools` 加一个 `@Tool` 方法,不动 Orchestrator
 
 ## 五、关键技术选型理由
 
@@ -111,49 +123,59 @@ request_id: req-abc-123
 
 ## 六、数据流(典型场景)
 
-### 场景 1:用户首次进入「我想学 Python 装饰器」
+### 场景 1:用户「我想学 Python 装饰器」(含记忆)
 
 ```
-1. POST /api/chat {message: "..."}
-2. Orchestrator.intent() → INTENT_LEARN (LLM 分类)
+1. POST /api/chat {message, sessionId?}
+2. ChatController:
+     a. getOrCreateSession(userId, sessionId) → 取/建会话
+     b. 存 USER 消息到 chat_message(成为下次记忆)
+     c. 读该会话最近 10 条历史 → 注入 AgentContext.dbHistory
+     d. 设置 UserContext(userId) + CallContext(requestId)
 3. Orchestrator.dispatch():
-     a. Planner.run() → 生成 3 阶段学习计划,写 plan_json
-     b. Quiz.run(plan) → 出 3 道预测试题
-     c. Recommender.run(plan) → 推荐 5 个资源
-4. Orchestrator.aggregate() → {plan, quiz, resources}
-5. 前端展示三块卡片,同时 GET /api/agent-calls?request_id=...
+     a. buildSystemPrompt(ctx) 注入 DB 历史
+     b. 把 5 个 @Tool 注册给 LLM (.tools(tools))
+     c. LLM 自主选择:planLearningPath + generateQuiz + recommendResources
+     d. LoggingToolCallingManager 拦截每次工具调用,记录入参/返回值/耗时
+     e. generateQuiz 落库生成 quizId(存入 QuizResultHolder)
+4. 存 ASSISTANT 回复到 chat_message
+5. 返回 {reply, tools[], detail, quiz?, sessionId}
+6. 前端:消息气泡 + QuizCard + GET /api/agent-calls 画调用链
 ```
 
-### 场景 2:用户提交答案
+### 场景 2:用户答题提交(Quiz 闭环)
 
 ```
-1. POST /api/attempts {quizId, answers[]}
-2. Quiz.grade() → 判分 + 解析
-3. Reviewer.run() → 更新 knowledge_progress + wrong_book
-4. (异步) Planner 读取最新 progress,生成"下一步建议"写入 plan
-5. 返回 {grade, progressDelta, nextPlan}
+1. 前端 QuizCard:用户作答 → POST /api/quiz/{quizId}/grade {answers[]}
+2. QuizService.grade():
+     a. 逐题比对(CHOICE 精确匹配 / FILL trim 忽略大小写)
+     b. 写 attempt 记录(每题一条,is_correct/score)
+     c. 错题写 wrong_book(UNIQUE 冲突则更新 master_level;做对升级到 2)
+     d. 更新 knowledge_progress(attempt_count++,correct_count++,重算 mastery)
+3. 返回 {graded[], summary: {total, correct, accuracy}}
+4. 前端展示对错标记 + 正确答案 + 解析
+5. 之后用户说"复盘一下" → reviewProgress 工具从 DB 读真实统计生成反馈
 ```
 
-### 场景 3:用户上传 PDF,Tutor 基于资料答疑
+### 场景 3:用户上传 PDF,基于资料答疑(RAG)
 
 ```
 1. POST /api/rag/upload (multipart)
-2. DocumentIngestor: PDF → 切片(600 字/80 重叠)→ 嵌入 → zvec
-3. POST /api/chat {message: "...", useRag: true}
-4. Tutor.run():
-     a. Retriever.retrieve(query, topK=5) → zvec 命中
-     b. 拼 prompt: {context: 命中片段} + {question}
-     c. LLM 回答,引用片段标号
-5. 返回 {answer, references: [{docId, chunkId, score}]}
+2. DocumentIngestor: PDF → 切片(600 字/80 重叠)→ 嵌入 → 写入内存向量库
+3. POST /api/chat {message: "..."}
+4. LLM 选中 answerQuestion 工具:
+     a. Retriever.retrieve(question, topK=5) → 检索命中片段
+     b. 命中片段拼进 system prompt(带来源序号 [n])
+     c. LLM 基于片段回答,TutorResult.ragUsed=true
+5. 返回 {answer, ragUsed}
 ```
 
 ## 七、扩展点
 
-- **新 Agent**:实现 `BaseAgent` 接口,在 `Orchestrator` 注册 intent 映射
+- **新工具**:在 `LearningTools` 加一个 `@Tool` 方法,Orchestrator 不用改(LLM 自动发现)
 - **新学科**:在 `subject` 表插一条 + 知识树 JSON
 - **新 LLM 厂商**:Spring AI 已支持多家;`.env` 切 base-url 即可
-- **图状编排**:把 `Orchestrator` 内部从 `if/switch` 升级为显式 DAG 即可,接口不变
-- **离线模式**:`LLM_FALLBACK_MOCK=true` 时,所有 Agent 返回 mock 但仍走完整调用链(便于演示)
+- **离线模式**:`LLM_FALLBACK_MOCK=true` 时,所有工具返回 fallback 但仍走完整调用链(便于演示)
 
 ## 八、安全
 

@@ -2,31 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Send, LogOut, BookOpen, Sparkles, CheckCircle2, XCircle, Loader2, Brain } from "lucide-react";
+import { Send, LogOut, BookOpen, Sparkles, Loader2, Brain } from "lucide-react";
 import BlurText from "@/components/ui/BlurText";
-import Stepper, { Step } from "@/components/ui/Stepper";
+import MessageBubble from "@/components/chat/MessageBubble";
+import AgentChainStepper from "@/components/chat/AgentChainStepper";
+import { chatApi, ApiError } from "@/lib/api";
+import { getToken, clearAuth } from "@/lib/auth";
+import type { AgentCall, ChatMessage } from "@/lib/types";
 
 /**
  * 聊天主界面 — react-bits 视觉特效
  *  - 左侧:对话流 + BlurText 欢迎语
  *  - 右侧:Stepper Agent 调用链(评分核心)
  */
-
-type AgentCall = {
-  id: number;
-  requestId: string;
-  parentCallId: number | null;
-  agentName: string;
-  action: string;
-  inputSummary?: string;
-  outputSummary?: string;
-  status: "RUNNING" | "SUCCESS" | "FAILED" | string;
-  durationMs?: number;
-};
-
-type ChatMessage =
-  | { role: "user"; text: string }
-  | { role: "assistant"; text: string; intent?: string; calls?: AgentCall[]; detail?: any };
 
 export default function ChatPage() {
   const router = useRouter();
@@ -35,10 +23,11 @@ export default function ChatPage() {
   const [useRag, setUseRag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [calls, setCalls] = useState<AgentCall[]>([]);
+  const [sessionId, setSessionId] = useState<number | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!localStorage.getItem("lb_token")) router.push("/");
+    if (!getToken()) router.push("/");
   }, [router]);
 
   useEffect(() => {
@@ -50,24 +39,30 @@ export default function ChatPage() {
     if (!text || busy) return;
     setInput("");
     setBusy(true);
+    // 双保险之"前端传历史":把已有消息映射成字符串数组发给后端
+    const history = messages.map((m) =>
+      `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.text}`,
+    );
     setMessages((m) => [...m, { role: "user", text }]);
     try {
-      const token = localStorage.getItem("lb_token") || "";
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: text, useRag }),
-      });
-      const data = await res.json();
-      setMessages((m) => [...m, { role: "assistant", text: data.reply, intent: data.intent, detail: data.detail }]);
+      const data = await chatApi.send(text, useRag, history, sessionId);
+      // 记住后端分配的 sessionId,后续请求带上(让后端把消息归到同一会话)
+      if (data.sessionId) setSessionId(data.sessionId);
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          text: data.reply,
+          detail: data.detail,
+          quiz: data.quiz,
+        },
+      ]);
       // 拉取调用链
-      const callsRes = await fetch(`/api/agent-calls?request_id=${data.requestId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const callsData = await callsRes.json();
+      const callsData = await chatApi.agentCalls(data.requestId);
       setCalls(callsData.calls || []);
-    } catch (e: any) {
-      setMessages((m) => [...m, { role: "assistant", text: "出错了:" + e.message }]);
+    } catch (e: unknown) {
+      const msg = e instanceof ApiError ? e.message : String(e);
+      setMessages((m) => [...m, { role: "assistant", text: "出错了:" + msg }]);
     } finally {
       setBusy(false);
     }
@@ -96,7 +91,7 @@ export default function ChatPage() {
             </label>
             <button
               onClick={() => {
-                localStorage.clear();
+                clearAuth();
                 router.push("/");
               }}
               className="flex items-center gap-1 text-slate-400 hover:text-rose-500 transition"
@@ -160,110 +155,11 @@ export default function ChatPage() {
           <h2 className="font-semibold text-slate-700 text-sm">Agent 调用链</h2>
         </div>
         {calls.length === 0 ? (
-          <p className="text-xs text-slate-400 mt-6 text-center">
-            还没有调用。发条消息试试。
-          </p>
+          <p className="text-xs text-slate-400 mt-6 text-center">还没有调用。发条消息试试。</p>
         ) : (
           <AgentChainStepper calls={calls} />
         )}
       </aside>
     </main>
-  );
-}
-
-function AgentChainStepper({ calls }: { calls: AgentCall[] }) {
-  return (
-    <Stepper
-      initialStep={1}
-      backButtonText="上一步"
-      nextButtonText="下一步"
-      stepCircleContainerClassName="!max-w-none !w-full"
-    >
-      {calls.map((c) => (
-        <Step key={c.id}>
-          <AgentCallCard call={c} />
-        </Step>
-      ))}
-    </Stepper>
-  );
-}
-
-function AgentCallCard({ call }: { call: AgentCall }) {
-  const statusMap: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
-    SUCCESS: {
-      icon: <CheckCircle2 className="w-4 h-4" />,
-      cls: "bg-emerald-100 text-emerald-700",
-      label: "成功",
-    },
-    FAILED: {
-      icon: <XCircle className="w-4 h-4" />,
-      cls: "bg-rose-100 text-rose-700",
-      label: "失败",
-    },
-    RUNNING: {
-      icon: <Loader2 className="w-4 h-4 animate-spin" />,
-      cls: "bg-amber-100 text-amber-700",
-      label: "运行中",
-    },
-  };
-  const s = statusMap[call.status] ?? {
-    icon: <Loader2 className="w-4 h-4 animate-spin" />,
-    cls: "bg-amber-100 text-amber-700",
-    label: call.status,
-  };
-
-  return (
-    <div className="py-2">
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-brand-700 text-sm">{call.agentName}</span>
-        <span
-          className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${s.cls}`}
-        >
-          {s.icon}
-          {s.label}
-        </span>
-      </div>
-      <div className="text-xs text-slate-500 mb-1">
-        <span className="text-slate-400">动作:</span> {call.action}
-      </div>
-      {call.durationMs != null && (
-        <div className="text-xs text-slate-500 mb-2">
-          <span className="text-slate-400">耗时:</span> {call.durationMs} ms
-        </div>
-      )}
-      {call.outputSummary && (
-        <div className="mt-2 text-xs text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 max-h-40 overflow-y-auto">
-          {call.outputSummary}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MessageBubble({ msg }: { msg: ChatMessage }) {
-  if (msg.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-lg px-4 py-3 rounded-2xl bg-brand-600 text-white">{msg.text}</div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col items-start">
-      {msg.intent && (
-        <div className="text-xs text-slate-400 mb-1">
-          意图:
-          <code className="bg-slate-100 px-1.5 py-0.5 rounded ml-1">{msg.intent}</code>
-        </div>
-      )}
-      <div className="max-w-2xl px-4 py-3 rounded-2xl bg-white border border-slate-200 whitespace-pre-wrap">
-        {msg.text}
-      </div>
-      {msg.detail?.detail?.agentResults && (
-        <div className="mt-2 ml-2 text-xs text-slate-500">
-          调动了 {msg.detail.detail.agentResults.length} 个 Agent
-        </div>
-      )}
-    </div>
   );
 }

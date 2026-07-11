@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { User, Lock, Sparkles, Loader2 } from "lucide-react";
 import Aurora from "@/components/ui/Aurora";
 import GradientText from "@/components/ui/GradientText";
+import { authApi, ApiError } from "@/lib/api";
+import { saveAuth } from "@/lib/auth";
 
 export default function HomePage() {
   const router = useRouter();
@@ -18,19 +20,14 @@ export default function HomePage() {
     setBusy(true);
     setErr(null);
     try {
-      const url = mode === "register" ? "/api/auth/register" : "/api/auth/login";
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "failed");
-      localStorage.setItem("lb_token", data.token);
-      localStorage.setItem("lb_user", JSON.stringify({ id: data.userId, username: data.username }));
+      const data =
+        mode === "register"
+          ? await authApi.register(username, password)
+          : await authApi.login(username, password);
+      saveAuth(data);
       router.push("/chat");
-    } catch (e: any) {
-      setErr(e.message);
+    } catch (e: unknown) {
+      setErr(e instanceof ApiError ? e.message : "请求失败");
     } finally {
       setBusy(false);
     }

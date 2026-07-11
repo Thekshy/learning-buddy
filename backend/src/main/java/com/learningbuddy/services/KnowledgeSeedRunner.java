@@ -1,7 +1,10 @@
 package com.learningbuddy.services;
 
-import com.learningbuddy.agents.AgentContext;
-import jakarta.annotation.PostConstruct;
+import com.learningbuddy.models.KnowledgeNode;
+import com.learningbuddy.models.Subject;
+import com.learningbuddy.repositories.KnowledgeNodeRepository;
+import com.learningbuddy.repositories.SubjectRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
@@ -11,26 +14,79 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 知识树种子数据注入器
+ * 知识树种子数据注入器(JPA 持久化版)
  *
- * <p>用 Java 端跑种子数据,避免外部脚本依赖。
- * <p>目前**不写关系库**——D2 阶段 JPA 实体按需生成时,这里再补 JPA 写入。
- * <p>当前阶段只打日志,便于演示时看到"3 门学科已就绪"。
+ * <p>启动时幂等写入 3 门学科 + 简化知识节点(按 code 查重,已存在则跳过)。
+ * <p>KnowledgeProgress / Quiz 通过 knowledge_node_id 挂靠这些节点。
  */
 @Slf4j
 @Component
 @Order(1)
+@RequiredArgsConstructor
 public class KnowledgeSeedRunner implements CommandLineRunner {
+
+    private final SubjectRepository subjectRepository;
+    private final KnowledgeNodeRepository nodeRepository;
+
+    /** 学科 code → (节点 code → 节点标题) */
+    private static final Map<String, List<String[]>> SEED = Map.of(
+            "python", List.of(
+                    new String[]{"basics", "Python 基础"},
+                    new String[]{"syntax", "语法与变量"},
+                    new String[]{"function", "函数"},
+                    new String[]{"decorator", "装饰器"},
+                    new String[]{"oop", "面向对象"}
+            ),
+            "math", List.of(
+                    new String[]{"calculus", "微积分"},
+                    new String[]{"limit", "极限"},
+                    new String[]{"derivative", "导数"},
+                    new String[]{"integral", "积分"}
+            ),
+            "english", List.of(
+                    new String[]{"vocab", "词汇"},
+                    new String[]{"cet4", "CET-4 词汇"},
+                    new String[]{"cet6", "CET-6 词汇"}
+            )
+    );
+
+    private static final Map<String, String> SUBJECT_NAMES = Map.of(
+            "python", "Python 编程",
+            "math", "高等数学",
+            "english", "英语(CET-4/6)"
+    );
 
     @Override
     public void run(String... args) {
-        log.info("🌱 种子数据:3 门学科(暂以日志形式加载,实体类生成时切到 JPA 写入)");
-        log.info("  - Python 编程");
-        log.info("  - 高等数学");
-        log.info("  - 英语(CET-4/6)");
+        int created = 0;
+        for (var entry : SEED.entrySet()) {
+            String code = entry.getKey();
+            Subject subject = subjectRepository.findByCode(code).orElseGet(() -> {
+                Subject s = Subject.builder()
+                        .code(code)
+                        .name(SUBJECT_NAMES.get(code))
+                        .build();
+                return subjectRepository.save(s);
+            });
+
+            int order = 0;
+            for (String[] node : entry.getValue()) {
+                boolean exists = nodeRepository.findBySubjectIdAndCode(subject.getId(), node[0]).isPresent();
+                if (exists) continue;
+                nodeRepository.save(KnowledgeNode.builder()
+                        .subject(subject)
+                        .code(node[0])
+                        .title(node[1])
+                        .difficulty(2)
+                        .sortOrder(order++)
+                        .build());
+                created++;
+            }
+        }
+        log.info("🌱 种子数据就绪:3 门学科 + 知识节点(本次新建 {} 个节点)", created);
     }
 
-    /** 演示用:返回一张内置知识树给 Planner 用 */
+    /** 演示用:返回一张内置知识树给前端展示 */
     public static Map<String, List<String>> builtinTree() {
         return Map.of(
                 "python",  List.of("Python 基础", "语法与变量", "函数", "装饰器", "面向对象"),

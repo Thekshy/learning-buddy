@@ -26,16 +26,21 @@ public class AgentCallRecorder {
     private final AtomicLong seq = new AtomicLong(1);
 
     public Long start(AgentContext ctx, String agentName, String action, String input) {
+        return startSimple(ctx.getRequestId(), agentName, action, input);
+    }
+
+    /** 不依赖 AgentContext 的重载(供 ToolCallingManager 包装层用) */
+    public Long startSimple(String requestId, String agentName, String action, String input) {
         long id = seq.getAndIncrement();
         CallRecord r = new CallRecord(
-                id, ctx.getRequestId(), ctx.getParentCallId(),
+                id, requestId, null,
                 agentName, action, input,
                 "RUNNING", null, null,
                 System.currentTimeMillis(), null, 0
         );
         byId.put(id, r);
-        byRequest.computeIfAbsent(ctx.getRequestId(), k -> new java.util.ArrayList<>()).add(r);
-        log.debug("AGENT_CALL start id={} request={} agent={}", id, ctx.getRequestId(), agentName);
+        byRequest.computeIfAbsent(requestId, k -> new java.util.ArrayList<>()).add(r);
+        log.debug("AGENT_CALL start id={} request={} agent={}", id, requestId, agentName);
         return id;
     }
 

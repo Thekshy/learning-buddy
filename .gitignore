@@ -112,3 +112,9 @@ vec-store/
 vector-store/
 chroma/
 chroma-data/
+
+# ====== IDE / 工具本地缓存 ======
+.zcode/
+.idea/
+*.iml
+.DS_Store
