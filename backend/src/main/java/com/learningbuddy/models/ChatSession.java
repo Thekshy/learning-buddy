@@ -39,6 +39,14 @@ public class ChatSession {
     @Builder.Default
     private String agentKind = "TUTOR";
 
+    /** 早期对话的压缩摘要(超窗口的旧消息压缩成一段,避免 LLM 失忆) */
+    @Column(columnDefinition = "TEXT")
+    private String summary;
+
+    /** 摘要覆盖到哪条消息 id(避免重复摘要已处理过的消息) */
+    @Column(name = "summary_up_to_id")
+    private Long summaryUpToId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

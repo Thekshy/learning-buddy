@@ -45,6 +45,10 @@ public class ChatMessage {
     @Column(name = "meta_json", columnDefinition = "TEXT")
     private String metaJson;
 
+    /** 该消息的向量(JSON 字符串形式,供语义检索用;异步填充) */
+    @Column(name = "embedding", columnDefinition = "TEXT")
+    private String embedding;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

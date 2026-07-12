@@ -123,24 +123,49 @@ request_id: req-abc-123
 
 ## 六、数据流(典型场景)
 
-### 场景 1:用户「我想学 Python 装饰器」(含记忆)
+### 记忆架构(四层记忆)
+
+```
+                     ┌─────────────────────────────────────────┐
+                     │           MessageChatMemoryAdvisor       │  ← Spring AI 官方
+                     │  before:注入历史 Message → after:写回新消息 │
+                     └────────────────────┬────────────────────┘
+                                          │
+              ┌───────────────────────────┼───────────────────────────┐
+              ▼                           ▼                           ▼
+   ① 短期窗口记忆                ② 摘要压缩记忆                 ③ 语义长期记忆
+   TokenAwareChatMemory          ConversationSummaryService       SemanticMemoryService
+   (最近 N 条 + token 裁剪)       (旧消息压缩成摘要)              (跨会话向量检索)
+   SystemMessage 永不丢弃         存 chat_session.summary         存 chat_message.embedding
+                                                                          │
+                                                                          ▼
+                                                              ④ 学习者画像记忆
+                                                              LearnerProfileService
+                                                              (掌握度注入 system prompt)
+```
+
+- **① 短期**:MessageChatMemoryAdvisor 自动把该会话最近 20 条(经 token 裁剪到 3000 token)历史作为真实多轮 Message 注入。SystemMessage(含画像/摘要)永不丢弃。
+- **② 摘要**:超 20 条消息时,异步把旧消息压缩成 150 字摘要,存入 `chat_session.summary`。下次注入时:摘要 + 最近 N 条原文,避免失忆。
+- **③ 语义**:每条消息异步算 embedding,检索时按余弦相似度跨会话语义召回,作为"你之前还和用户聊过这些相关内容"注入。
+- **④ 画像**:从 `knowledge_progress` 读各知识点掌握度,生成学习画像注入 system prompt,LLM 据此针对性出题/讲解。
+
+### 场景 1:用户「我想学 Python 装饰器」(四层记忆)
 
 ```
 1. POST /api/chat {message, sessionId?}
 2. ChatController:
-     a. getOrCreateSession(userId, sessionId) → 取/建会话
-     b. 存 USER 消息到 chat_message(成为下次记忆)
-     c. 读该会话最近 10 条历史 → 注入 AgentContext.dbHistory
-     d. 设置 UserContext(userId) + CallContext(requestId)
+     a. getOrCreateSession(userId, sessionId)
+     b. 语义检索 relatedMemory(③) + 学习画像 learnerProfile(④) → 注入 ctx.data
+     c. 设置 UserContext(userId) + CallContext(requestId)
 3. Orchestrator.dispatch():
-     a. buildSystemPrompt(ctx) 注入 DB 历史
-     b. 把 5 个 @Tool 注册给 LLM (.tools(tools))
-     c. LLM 自主选择:planLearningPath + generateQuiz + recommendResources
-     d. LoggingToolCallingManager 拦截每次工具调用,记录入参/返回值/耗时
-     e. generateQuiz 落库生成 quizId(存入 QuizResultHolder)
-4. 存 ASSISTANT 回复到 chat_message
-5. 返回 {reply, tools[], detail, quiz?, sessionId}
-6. 前端:消息气泡 + QuizCard + GET /api/agent-calls 画调用链
+     a. buildSystemPrompt(ctx):角色 + 工具说明 + 画像(④)+ 语义记忆(③)
+     b. .advisors(param(CONVERSATION_ID, sessionId)) 指定会话
+     c. MessageChatMemoryAdvisor 自动注入:摘要(②)+ 最近消息(①)
+     d. LLM 自主选择工具,LoggingToolCallingManager 记录入参/返回值/耗时
+     e. generateQuiz 落库生成 quizId
+4. MessageChatMemoryAdvisor after:把 USER + ASSISTANT 写回 chat_message(自动)
+5. 异步:摘要压缩(②)+ 标题生成 + embedding(③)
+6. 返回 {reply, tools[], detail, quiz?, sessionId}
 ```
 
 ### 场景 2:用户答题提交(Quiz 闭环)

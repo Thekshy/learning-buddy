@@ -8,14 +8,11 @@ import java.util.List;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
 
-    /** 取某会话最近 limit 条消息(记忆注入用),按时间正序返回 */
-    default List<ChatMessage> findRecent(Long sessionId, int limit) {
-        List<ChatMessage> msgs = findBySessionIdOrderByIdDesc(sessionId, Pageable.ofSize(limit));
-        java.util.Collections.reverse(msgs);   // 翻成正序
-        return msgs;
-    }
-
     List<ChatMessage> findBySessionIdOrderByIdDesc(Long sessionId, Pageable pageable);
 
     List<ChatMessage> findBySessionIdOrderByIdAsc(Long sessionId);
+
+    /** 某用户所有会话的所有消息(跨会话语义检索用,通过 session.user 联结) */
+    @org.springframework.data.jpa.repository.Query("select m from ChatMessage m where m.session.user.id = ?1 and m.embedding is not null")
+    List<ChatMessage> findEmbeddedByUserId(Long userId);
 }

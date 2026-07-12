@@ -13,10 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * 会话与记忆服务
+ * 会话服务
  *
- * <p>记忆系统的核心:管理 ChatSession 生命周期 + 读写 ChatMessage。
- * <p>记忆注入策略:取当前会话最近 N 条消息,拼成对话历史文本喂给 Orchestrator。
+ * <p>管理 ChatSession 生命周期 + ChatMessage 查询。
+ * <p>记忆注入已由 MessageChatMemoryAdvisor 自动完成,本类只负责会话 CRUD 和历史查询接口。
  */
 @Slf4j
 @Service
@@ -25,9 +25,6 @@ public class SessionService {
 
     private final ChatSessionRepository sessionRepository;
     private final ChatMessageRepository messageRepository;
-
-    /** 记忆窗口:注入最近多少条消息(控制 token,默认 10 条 ≈ 5 轮对话) */
-    private static final int MEMORY_WINDOW = 10;
 
     /**
      * 取或建会话。
@@ -84,20 +81,6 @@ public class SessionService {
         return messageRepository.save(msg);
     }
 
-    /**
-     * 取最近记忆,拼成对话历史文本(供 Orchestrator 注入 prompt)。
-     * <p>格式:每行一条 "USER: xxx" / "ASSISTANT: xxx"。
-     * <p>不含当前轮的用户输入(当前轮由 user message 单独传)。
-     */
-    @Transactional(readOnly = true)
-    public String recentHistoryAsText(Long sessionId) {
-        List<ChatMessage> recent = messageRepository.findRecent(sessionId, MEMORY_WINDOW);
-        if (recent.isEmpty()) return null;
-        StringBuilder sb = new StringBuilder();
-        for (ChatMessage m : recent) {
-            String role = "ASSISTANT".equals(m.getRole()) ? "AI" : m.getRole();
-            sb.append(role).append(": ").append(m.getContent()).append("\n");
-        }
-        return sb.toString();
-    }
+    // 注:recentHistoryAsText 已移除 —— 记忆现在由 MessageChatMemoryAdvisor 自动注入,
+    // 不再手动拼历史文本。SessionService 专注于会话 CRUD + 消息查询(给前端历史接口用)。
 }
