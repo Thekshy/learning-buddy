@@ -58,6 +58,7 @@ learningbuddy:
   llm:
     fallback-mock: ${LLM_FALLBACK_MOCK:true}
     provider: ${LLM_PROVIDER:minimax}
+    embed-enabled: ${LLM_EMBED_ENABLED:true}
   zvec:
     data-dir: ${ZVEC_DATA_DIR:./data/zvec}
     default-collection: ${ZVEC_COLLECTION_DEFAULT:learning_buddy_default}

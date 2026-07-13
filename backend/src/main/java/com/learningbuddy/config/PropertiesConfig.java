@@ -17,7 +17,7 @@ public record PropertiesConfig(
 ) {
     public record Jwt(String secret, int ttlHours, String issuer) {}
     public record Security(int bcryptRounds) {}
-    public record Llm(boolean fallbackMock, String provider) {}
+    public record Llm(boolean fallbackMock, String provider, boolean embedEnabled) {}
     public record Zvec(String dataDir, String defaultCollection, int dim, int topK) {}
     public record Rag(int chunkSize, int chunkOverlap) {}
     public record Cors(String allowedOrigins) {}

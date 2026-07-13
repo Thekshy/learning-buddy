@@ -56,6 +56,11 @@ public class SemanticMemoryService {
     private void embedMessage(Long messageId, String content) {
         try {
             float[] vec = llm.embed(content);
+            if (vec == null) {
+                // embeddings 已关闭:不写零向量,保持 embedding 列为 null(检索时会跳过)
+                log.debug("embeddings disabled, skip storing embedding for msg {}", messageId);
+                return;
+            }
             // float[] → double[](Jackson 默认支持 double[] 序列化)
             double[] dbl = new double[vec.length];
             for (int i = 0; i < vec.length; i++) dbl[i] = vec[i];
@@ -88,6 +93,7 @@ public class SemanticMemoryService {
             log.warn("embed query failed: {}", e.getMessage());
             return null;
         }
+        if (queryVec == null) return null;
 
         // 算余弦相似度,取 topK
         List<Hit> hits = new ArrayList<>();

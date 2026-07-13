@@ -88,7 +88,15 @@ public class Orchestrator {
             );
         } catch (RuntimeException e) {
             recorder.finish(rootCallId, "FAILED", null, abbreviate(e.getMessage(), 300));
-            throw e;
+            log.warn("Orchestrator LLM call failed, returning offline fallback: {}", e.getMessage());
+            return new OrchestratorResponse(
+                    ctx.getRequestId(),
+                    List.of(),
+                    "⚠️ LLM 服务暂不可用（当前为离线演示模式）。\n\n"
+                    + "你的需求已收到：「" + abbreviate(userMessage, 80) + "」\n"
+                    + "配置真实的 MiniMax API Key 后即可使用完整的多智能体功能（路径规划 / 出题 / 答疑 / 资源推荐 / 复盘）。",
+                    Map.of("agentResults", List.of(), "tools", List.of(), "toolCount", 0)
+            );
         } finally {
             callContext.clear();
         }

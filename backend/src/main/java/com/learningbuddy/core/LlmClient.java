@@ -127,6 +127,12 @@ public class LlmClient {
 
     /** 文本嵌入(zvec 写入与查询都用) */
     public float[] embed(String text) {
+        if (!properties.llm().embedEnabled()) {
+            // embedding 模型不可用(如 Coding Plan Key 未开通 embedding 权限)时直接跳过,
+            // 避免每次聊天都打一次注定 404 的请求并刷 WARN 日志
+            log.debug("embeddings disabled (llm.embed-enabled=false), skip: {}", abbreviate(text, 40));
+            return null;
+        }
         try {
             return embeddingModel.embed(text);
         } catch (Exception e) {
